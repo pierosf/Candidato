@@ -1,30 +1,34 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
-List<Candidato> _candidatos = new();
 
-app.MapGet("/candidatos", () => TypedResults.Ok(_candidatos));
-app.MapGet("/candidatos/{id}", ([FromRoute] int id) => TypedResults.Ok(_candidatos.FirstOrDefault(c => c.Id == id)));
-app.MapPost("/candidatos", ([FromBody] Candidato _nuevoCandidato) => {
-    _nuevoCandidato.Id = _candidatos.Count + 1;
-    _candidatos.Add(_nuevoCandidato);
+var connection = new SqliteConnection("DataSource=votos.db");
+connection.Open();
+builder.Services.AddDbContext<VotoDb>(opt => opt.UseSqlite(connection));
+
+var app = builder.Build();
+
+app.MapGet("/candidatos", (VotoDb _db) => TypedResults.Ok(_db.Candidatos.ToList()));
+app.MapGet("/candidatos/{id}", (VotoDb _db, [FromRoute] int id) => TypedResults.Ok(_db.Candidatos.Find(id)));
+app.MapPost("/candidatos", (VotoDb _db, [FromBody] Candidato _nuevoCandidato) => {
+    _db.Candidatos.Add(_nuevoCandidato);
+    _db.SaveChanges();
     return TypedResults.Ok(_nuevoCandidato.Id);
 });
-app.MapPut("/candidatos/{id}", ([FromRoute] int id, [FromBody] Candidato _candidatoActualizado) =>  {
-    foreach (var _candidato in _candidatos)
-    {
-        if (_candidato.Id == id) 
-        {
-            _candidato.Nombre = _candidatoActualizado.Nombre;
-            _candidato.Apellido = _candidatoActualizado.Apellido;
-            _candidato.Partido = _candidatoActualizado.Partido;
-        }
-    }
+app.MapPut("/candidatos/{id}", (VotoDb _db, [FromRoute] int id, [FromBody] Candidato _candidatoActualizado) =>  {
+    var _candidato = _db.Candidatos.Find(id);
+    _candidato.Nombre = _candidatoActualizado.Nombre;
+    _candidato.Apellido = _candidatoActualizado.Apellido;
+    _candidato.Partido = _candidatoActualizado.Partido;
+    _db.SaveChanges();
     return TypedResults.Ok();
 });
-app.MapDelete("/candidatos/{id}", ([FromRoute] int id) => {
-    _candidatos = _candidatos.Where(c => c.Id != id).ToList();
+app.MapDelete("/candidatos/{id}", (VotoDb _db, [FromRoute] int id) => {
+    var _candidato = _db.Candidatos.Find(id);
+    _db.Candidatos.Remove(_candidato);
+    _db.SaveChanges();
     return TypedResults.Ok();
 });
 
@@ -36,4 +40,13 @@ public class Candidato
     public required string Nombre { get; set; }
     public required string Apellido { get; set; }
     public required string Partido { get; set; }
+}
+
+public class VotoDb : DbContext
+{
+    public VotoDb(DbContextOptions<VotoDb> options) : base(options) { 
+        Database.EnsureCreated();
+    }
+
+    public DbSet<Candidato> Candidatos => Set<Candidato>();
 }
