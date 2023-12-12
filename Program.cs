@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,7 +12,24 @@ builder.Services.AddDbContext<VotoDb>(opt => opt.UseSqlite(connection));
 var app = builder.Build();
 
 app.MapGet("/candidatos", (VotoDb _db) => TypedResults.Ok(_db.Candidatos.ToList()));
-app.MapGet("/candidatos/{id}", (VotoDb _db, [FromRoute] int id) => TypedResults.Ok(_db.Candidatos.Find(id)));
+app.MapGet("/candidatos/{id}", async ([FromRoute] int id) => {
+    var connection = new SqliteConnection("DataSource=votos.db");
+    connection.Open();
+    var options = new DbContextOptionsBuilder<VotoDb>()
+    .UseSqlite(connection)
+    .Options;
+    var factory = new PooledDbContextFactory<VotoDb>(options);
+    Candidato candidato = new(){
+        Apellido = string.Empty,
+        Nombre = string.Empty,
+        Partido = string.Empty
+    };
+    using (var context = factory.CreateDbContext())
+    {
+        candidato = await context.Candidatos.FindAsync(id);
+    }
+    return TypedResults.Ok(candidato);
+});
 app.MapPost("/candidatos", (VotoDb _db, [FromBody] Candidato _nuevoCandidato) => {
     _db.Candidatos.Add(_nuevoCandidato);
     _db.SaveChanges();
@@ -45,7 +63,7 @@ public class Candidato
 public class VotoDb : DbContext
 {
     public VotoDb(DbContextOptions<VotoDb> options) : base(options) { 
-        Database.EnsureCreated();
+        Database.EnsureCreatedAsync();
     }
 
     public DbSet<Candidato> Candidatos => Set<Candidato>();
